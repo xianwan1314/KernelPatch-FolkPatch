@@ -231,6 +231,8 @@ extern ssize_t kfunc_def(kernel_read)(struct file *file, void *buf, size_t count
 extern ssize_t kfunc_def(kernel_write)(struct file *file, const void *buf, size_t count, loff_t *pos);
 extern ssize_t kfunc_def(__kernel_write)(struct file *, const char *, size_t, loff_t *);
 extern struct file *kfunc_def(open_exec)(const char *);
+extern struct file *kfunc_def(fget)(int fd);
+extern struct file *kfunc_def(fput)(struct file *file);
 
 extern struct file *kfunc_def(file_open_name)(struct filename *, int, umode_t);
 extern struct file *kfunc_def(filp_open)(const char *, int, umode_t);
