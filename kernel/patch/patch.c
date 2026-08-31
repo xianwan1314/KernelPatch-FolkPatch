@@ -66,6 +66,7 @@ int android_user_init();
 int android_sepolicy_flags_fix();
 #endif
 
+
 static void before_rest_init(hook_fargs4_t *args, void *udata)
 {
     int rc = 0;

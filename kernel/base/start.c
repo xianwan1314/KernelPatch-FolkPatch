@@ -47,6 +47,12 @@ KP_EXPORT_SYMBOL(printk);
 
 int (*vsnprintf)(char *buf, size_t size, const char *fmt, va_list args);
 
+struct suffix_lookup
+{
+    const char *base;
+    unsigned long addr;
+};
+
 static struct vm_struct
 {
     struct vm_struct *next;
@@ -156,6 +162,78 @@ int kallsyms_on_each_match_symbol(int (*fn)(void *, unsigned long), const char *
     return kallsyms_on_each_symbol_nomod(kallsyms_on_each_match_symbol_cb_nomod, &ctx);
 }
 KP_EXPORT_SYMBOL(kallsyms_on_each_match_symbol);
+
+static bool suffix_contains_cfi(const char *suffix)
+{
+    size_t i;
+
+    for (i = 0; suffix[i]; i++) {
+        if (suffix[i] == 'c' && suffix[i + 1] == 'f' && suffix[i + 2] == 'i' &&
+            (i == 0 || suffix[i - 1] == '.' || suffix[i - 1] == '$') &&
+            (!suffix[i + 3] || suffix[i + 3] == '.' || suffix[i + 3] == '$'))
+            return true;
+    }
+    return false;
+}
+
+static bool symbol_has_compiler_suffix(const char *name, const char *base)
+{
+    size_t i;
+
+    for (i = 0; base[i]; i++) {
+        if (name[i] != base[i]) return false;
+    }
+    if (!(name[i] == '.' || name[i] == '$') || !name[i + 1]) return false;
+    if (suffix_contains_cfi(name + i + 1)) return false; /* skip .cfi_jt stubs */
+    return true;
+}
+
+static int lookup_suffix_cb(void *data, const char *name, struct module *module, unsigned long addr)
+{
+    struct suffix_lookup *lookup = data;
+
+    (void)module;
+    if (!lookup || lookup->addr || !addr) return 0;
+    if (!symbol_has_compiler_suffix(name, lookup->base)) return 0;
+    lookup->addr = addr;
+    return 1;
+}
+
+static int lookup_suffix_cb_nomod(void *data, const char *name, unsigned long addr)
+{
+    struct suffix_lookup *lookup = data;
+
+    if (!lookup || lookup->addr || !addr) return 0;
+    if (!symbol_has_compiler_suffix(name, lookup->base)) return 0;
+    lookup->addr = addr;
+    return 1;
+}
+
+unsigned long kallsyms_lookup_name_by_suffix(const char *name){
+
+
+    unsigned long addr = kallsyms_lookup_name(name);
+    log_boot("kallsyms_lookup_name_by_suffix: name=%s addr=%llx\n", name, addr);
+    if (addr) return addr;
+    if (!kallsyms_on_each_symbol) return 0;
+    struct suffix_lookup lookup;
+
+    lookup.base = name;
+    lookup.addr = 0;
+
+    if (kver <= VERSION(6, 1, 0)) {
+        kallsyms_on_each_symbol(lookup_suffix_cb, &lookup);
+    } else {
+        typedef int (*kallsyms_on_each_symbol_nomod_t)(int (*fn)(void *, const char *, unsigned long), void *data);
+        kallsyms_on_each_symbol_nomod_t on_each_symbol =
+            (kallsyms_on_each_symbol_nomod_t)kallsyms_on_each_symbol;
+        on_each_symbol(lookup_suffix_cb_nomod, &lookup);
+    }
+
+    return lookup.addr;
+
+}
+KP_EXPORT_SYMBOL(kallsyms_lookup_name_by_suffix);
 
 uint64_t _kp_extra_start = 0;
 uint64_t _kp_extra_end = 0;
@@ -433,8 +511,17 @@ static void prot_myself()
     }
 }
 
-static void restore_map()
+// Restore the map anchor area (a sacrificed kernel function) to its
+// original bytes. Idempotent. Always runs inside start(), before
+// sched_init: the anchor functions (tcp_init_sock & friends) must be
+// restored before any of them can be called again, and the tail return
+// below in start() never executes the anchor bytes after this.
+static int map_restored = 0;
+void restore_map()
 {
+    if (map_restored) return;
+    map_restored = 1;
+
     uint64_t start = kernel_va + start_preset.map_offset;
     uint64_t end = start + start_preset.map_backup_len;
     log_boot("Restore: %llx, %llx\n", start, end);
@@ -623,13 +710,46 @@ int patch();
 int __attribute__((section(".start.text"))) __noinline start(uint64_t kimage_voff, uint64_t linear_voff)
 {
     int rc = 0;
+    // raw stash for post-mortem debugging: no vsnprintf available yet here
+    ((uint64_t *)boot_log)[0] = 0x4b50565354415254ull; // "KPVSTART" marker
+    ((uint64_t *)boot_log)[1] = kimage_voff;
+    ((uint64_t *)boot_log)[2] = linear_voff;
     rc = start_init(kimage_voff, linear_voff);
     if (rc) return rc;
     prot_myself();
+    // restore the map anchor (the sacrificed tcp_init_sock & friends) as
+    // soon as KP's regions are up; the tail return below never executes
+    // the anchor bytes again, so this is safe for every kernel
     restore_map();
     log_regs();
     predata_init();
     symbol_init();
     rc = patch();
+    // >= GKI 1.0 kernels take the scratch path: their _paging_init epilogue
+    // lives in the restored map anchor and must never execute, so return to
+    // the kernel's paging_init caller directly, restoring _paging_init's
+    // callee-saved registers from its frame ([our x29] = its x29 (P); its
+    // saved x19-x28 at P+16..P+88; the kernel's return address at P+8; the
+    // caller's sp at P+0x280 = frame 0x290 with x29 = sp + 0x10). Legacy
+    // kernels (< 5.4) return through the normal epilogue below, which
+    // executes restored anchor bytes - verified working on 4.19/4.9
+    // devices (the restored instructions at the epilogue offset are benign
+    // there).
+    if (kver >= VERSION(5, 4, 0)) {
+    __asm__ volatile(
+        "ldr x10, [x29]\n"
+        "ldp x19, x20, [x10, #16]\n"
+        "ldp x21, x22, [x10, #32]\n"
+        "ldp x23, x24, [x10, #48]\n"
+        "ldp x25, x26, [x10, #64]\n"
+        "ldp x27, x28, [x10, #80]\n"
+        "mov x29, x10\n"
+        "ldr x30, [x10, #8]\n"
+        "add sp, x10, #0x280\n"
+        "ret\n"
+        : : : "x10", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26",
+              "x27", "x28", "x29", "x30", "memory");
+    __builtin_unreachable();
+    }
     return rc;
 }

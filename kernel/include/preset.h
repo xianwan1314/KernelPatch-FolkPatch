@@ -18,7 +18,7 @@
 #define SETUP_PRESERVE_LEN 0x40
 #define HDR_BACKUP_SIZE 0x8
 #define COMPILE_TIME_LEN 0x18
-#define MAP_MAX_SIZE 0xa00
+#define MAP_MAX_SIZE 0x1000
 #define HOOK_ALLOC_SIZE (1 << 20)
 #define MEMORY_ROX_SIZE (4 << 20)
 #define MEMORY_RW_SIZE (2 << 20)
@@ -28,7 +28,7 @@
 #define CONFIG_ANDROID (1 << 1)
 #define CONFIG_FLAG_X86_64 (1 << 2)
 
-#define KP_X86_ENTRY_OFFSET 0x800
+#define KP_X86_ENTRY_OFFSET 0x600
 
 #define MAP_SYMBOL_NUM (7)
 #define MAP_SYMBOL_SIZE (MAP_SYMBOL_NUM * 8)
