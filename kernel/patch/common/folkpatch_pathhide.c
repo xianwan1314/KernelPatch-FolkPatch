@@ -219,11 +219,11 @@ int folkpatch_pathhide_init(void)
     pathhide_copy_from_user = (void *)kallsyms_lookup_name("__arch_copy_from_user");
     if (!pathhide_copy_from_user)
         pathhide_copy_from_user = (void *)kallsyms_lookup_name("_copy_from_user");
-    openat = fp_hook_syscalln(__NR_openat, 4, folkpatch_pathhide_before_path, 0, 0);
-    faccessat = fp_hook_syscalln(__NR_faccessat, 3, folkpatch_pathhide_before_path, 0, 0);
-    newfstatat = fp_hook_syscalln(__NR3264_fstatat, 4, folkpatch_pathhide_before_path, 0, 0);
-    getdents64 = fp_hook_syscalln(__NR_getdents64, 3, 0,
-                                  folkpatch_pathhide_after_getdents64, 0);
+    openat = hook_syscalln_override(__NR_openat, 4, folkpatch_pathhide_before_path, 0, 0);
+    faccessat = hook_syscalln_override(__NR_faccessat, 3, folkpatch_pathhide_before_path, 0, 0);
+    newfstatat = hook_syscalln_override(__NR3264_fstatat, 4, folkpatch_pathhide_before_path, 0, 0);
+    getdents64 = hook_syscalln_override(__NR_getdents64, 3, 0,
+                                       folkpatch_pathhide_after_getdents64, 0);
     pathhide.hooks_ready = !openat && !faccessat && !newfstatat && !getdents64 &&
                            pathhide_fget && pathhide_fput && pathhide_file_path &&
                            pathhide_copy_from_user;

@@ -100,10 +100,10 @@ int folkpatch_netisolate_init(void)
         netisolate_copy_from_user = (void *)kallsyms_lookup_name("_copy_from_user");
     if (!netisolate_copy_from_user) return -ENOSYS;
 
-    connect_rc = fp_hook_syscalln(__NR_connect, 3,
-                                  folkpatch_netisolate_before_connect, 0, 0);
-    sendto_rc = fp_hook_syscalln(__NR_sendto, 6,
-                                 folkpatch_netisolate_before_sendto, 0, 0);
+    connect_rc = hook_syscalln_override(__NR_connect, 3,
+                                       folkpatch_netisolate_before_connect, 0, 0);
+    sendto_rc = hook_syscalln_override(__NR_sendto, 6,
+                                      folkpatch_netisolate_before_sendto, 0, 0);
     netisolate.hooks_ready = !connect_rc && !sendto_rc;
     return netisolate.hooks_ready ? 0 : -ENOSYS;
 }
