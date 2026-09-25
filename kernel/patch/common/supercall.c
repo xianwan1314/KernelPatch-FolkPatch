@@ -440,7 +440,6 @@ static void before(hook_fargs6_t *args, void *udata)
         char key[MAX_KEY_LEN];
         long len = compat_strncpy_from_user(key, key_user, MAX_KEY_LEN);
         if (len <= 0) {
-            logkfi("[diag:sc] uid=%d has_preset=%d key_copy_fail len=%ld\n", uid, has_preset, len);
             return;
         }
         is_authed = !auth_superkey(key);
@@ -460,8 +459,6 @@ static void before(hook_fargs6_t *args, void *udata)
         if (!has_preset) is_authed = 1;
     }
     if (!is_trusted_caller) {
-        logkfi("[diag:sc] uid=%d has_preset=%d is_tm=%d is_su=%d denied\n",
-               uid, has_preset, is_tm, is_su);
         return;
     }
 
