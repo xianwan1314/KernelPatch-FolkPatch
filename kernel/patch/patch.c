@@ -61,8 +61,6 @@ void syscall_dispatch_init();
 int kstorage_init();
 int su_compat_init();
 // int selinux_hide_init();
-int folkpatch_pathhide_init(void);
-int folkpatch_netisolate_init(void);
 
 #ifdef ANDROID
 int android_user_init();
@@ -104,14 +102,6 @@ static void before_rest_init(hook_fargs4_t *args, void *udata)
     log_boot("su_compat_init done: %d\n", rc);
 
     log_boot("selinux_sepolicy_boot_init: %d\n", selinux_sepolicy_boot_init());
-
-    /* Path hiding is optional; a missing hook must not block boot. */
-    rc = folkpatch_pathhide_init();
-    log_boot("folkpatch_pathhide_init done: %d\n", rc);
-
-    /* Network isolation is optional; failed hooks must not block boot. */
-    rc = folkpatch_netisolate_init();
-    log_boot("folkpatch_netisolate_init done: %d\n", rc);
 
     rc = resolve_pt_regs();
     log_boot("resolve_pt_regs done: %d\n", rc);
